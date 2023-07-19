@@ -88,7 +88,8 @@ func (r *ACMCertificateImportReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Ensure the certificate is up to date in ACM
 	if err := r.ensureCertificateUpdated(ctx, &certificateImport); err != nil {
-		return ctrl.Result{}, err
+		// If the error is a secret not being found we dont want the log spam, so retry but drop the error
+		return ctrl.Result{Requeue: true}, client.IgnoreNotFound(err)
 	}
 
 	// Update the service annotations
@@ -180,7 +181,11 @@ func (r *ACMCertificateImportReconciler) ensureServiceAnnotations(ctx context.Co
 		// Get the service
 		var service corev1.Service
 		if err := r.Get(ctx, client.ObjectKey{Namespace: certificateImport.Namespace, Name: serviceRef.Name}, &service); err != nil {
-			errors = append(errors, fmt.Errorf("could not get service %q: %w", serviceRef.Name, err))
+			// If the error is the service not being found then don't return an error, we will re-reconcile when the
+			// service gets created anyway.
+			if !apierrors.IsNotFound(err) {
+				errors = append(errors, fmt.Errorf("could not get service %q: %w", serviceRef.Name, err))
+			}
 			continue
 		}
 
