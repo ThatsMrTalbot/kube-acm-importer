@@ -154,9 +154,10 @@ func (r *ACMCertificateImportReconciler) ensureCertificateUpdated(ctx context.Co
 	}
 
 	// Update the object with the new ARN / Serial
+	originalCertificateImport := certificateImport.DeepCopy()
 	certificateImport.Status.ARN = output.CertificateArn
 	certificateImport.Status.SerialNumber = certs[0].SerialNumber.String()
-	if err := r.Status().Update(ctx, certificateImport); err != nil {
+	if err := r.Status().Patch(ctx, certificateImport, client.MergeFrom(originalCertificateImport)); err != nil {
 		return err
 	}
 
@@ -275,7 +276,10 @@ func (r *ACMCertificateImportReconciler) removeServiceAnnotations(ctx context.Co
 		annoationKeyEscaped = strings.ReplaceAll(annoationKeyEscaped, "/", "~1")
 		jsonPatch := fmt.Sprintf(`[{"op": "remove", "path": "/metadata/annotations/%s"}]`, annoationKeyEscaped)
 		if err := r.Patch(ctx, &service, client.RawPatch(types.JSONPatchType, []byte(jsonPatch)), client.FieldOwner(FieldOwner)); err != nil {
-			errors = append(errors, fmt.Errorf("could not patch service %q annotation: %w", serviceRef.Name, err))
+			if !apierrors.IsNotFound(err) {
+				errors = append(errors, fmt.Errorf("could not patch service %q annotation: %w", serviceRef.Name, err))
+			}
+			continue
 		}
 	}
 
