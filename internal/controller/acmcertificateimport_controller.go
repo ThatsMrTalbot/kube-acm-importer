@@ -28,15 +28,20 @@ import (
 	"github.com/aws/aws-sdk-go/service/acm/acmiface"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/cert"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	acmv1alpha1 "github.com/thatsmrtalbot/kube-acm-importer/api/v1alpha1"
 )
@@ -44,6 +49,9 @@ import (
 const ServiceAnnotation = "service.beta.kubernetes.io/aws-load-balancer-ssl-cert"
 const Finalizer = "acm.kubespress.com/imported"
 const FieldOwner = "acm.kubespress.com"
+
+const secretIndexRef = ".spec.secretRef.name"
+const serviceIndexRef = ".spec.serviceRefs.name"
 
 // ACMCertificateImportReconciler reconciles a ACMCertificateImport object
 type ACMCertificateImportReconciler struct {
@@ -292,9 +300,88 @@ func (r *ACMCertificateImportReconciler) getCertificatesFromSecret(ctx context.C
 	return certs, secret.Data["tls.key"], nil
 }
 
+func (r *ACMCertificateImportReconciler) findObjectsForSecret(ctx context.Context, secret client.Object) []reconcile.Request {
+	attachedACMCertificateImports := &acmv1alpha1.ACMCertificateImportList{}
+	listOps := &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector(secretIndexRef, secret.GetName()),
+		Namespace:     secret.GetNamespace(),
+	}
+	err := r.List(ctx, attachedACMCertificateImports, listOps)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+
+	requests := make([]reconcile.Request, len(attachedACMCertificateImports.Items))
+	for i, item := range attachedACMCertificateImports.Items {
+		requests[i] = reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      item.GetName(),
+				Namespace: item.GetNamespace(),
+			},
+		}
+	}
+	return requests
+}
+
+func (r *ACMCertificateImportReconciler) findObjectsForService(ctx context.Context, service client.Object) []reconcile.Request {
+	attachedACMCertificateImports := &acmv1alpha1.ACMCertificateImportList{}
+	listOps := &client.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector(serviceIndexRef, service.GetName()),
+		Namespace:     service.GetNamespace(),
+	}
+	err := r.List(ctx, attachedACMCertificateImports, listOps)
+	if err != nil {
+		return []reconcile.Request{}
+	}
+
+	requests := make([]reconcile.Request, len(attachedACMCertificateImports.Items))
+	for i, item := range attachedACMCertificateImports.Items {
+		requests[i] = reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      item.GetName(),
+				Namespace: item.GetNamespace(),
+			},
+		}
+	}
+	return requests
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *ACMCertificateImportReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	// Index the secret name
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &acmv1alpha1.ACMCertificateImport{}, secretIndexRef, func(rawObj client.Object) []string {
+		certificateImport := rawObj.(*acmv1alpha1.ACMCertificateImport)
+		if certificateImport.Spec.SecretRef.Name == "" {
+			return nil
+		}
+		return []string{certificateImport.Spec.SecretRef.Name}
+	}); err != nil {
+		return err
+	}
+
+	// Index the service names
+	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &acmv1alpha1.ACMCertificateImport{}, serviceIndexRef, func(rawObj client.Object) []string {
+		certificateImport := rawObj.(*acmv1alpha1.ACMCertificateImport)
+		values := make([]string, len(certificateImport.Spec.ServiceRefs))
+		for i, serviceRef := range certificateImport.Spec.ServiceRefs {
+			values[i] = serviceRef.Name
+		}
+		return values
+	}); err != nil {
+		return err
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&acmv1alpha1.ACMCertificateImport{}).
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.findObjectsForSecret),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
+		Watches(
+			&corev1.Service{},
+			handler.EnqueueRequestsFromMapFunc(r.findObjectsForService),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
+		).
 		Complete(r)
 }
