@@ -58,6 +58,7 @@ metadata:
   name: examplecom
 spec:
   secretName: examplecom-secret
+  commonName: example.com
   dnsNames:
   - example.com
   issuerRef:
