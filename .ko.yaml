@@ -1,0 +1,9 @@
+builds:
+- id: kube-acm-importer
+  main: ./cmd
+
+defaultPlatforms:
+- linux/arm64
+- linux/amd64
+- linux/s390x
+- linux/ppc64le

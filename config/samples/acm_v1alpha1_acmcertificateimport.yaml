@@ -1,0 +1,13 @@
+apiVersion: acm.kubespress.com/v1alpha1
+kind: ACMCertificateImport
+metadata:
+  labels:
+    app.kubernetes.io/name: acmcertificateimport
+    app.kubernetes.io/instance: acmcertificateimport-sample
+    app.kubernetes.io/part-of: kube-acm-importer
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/created-by: kube-acm-importer
+  name: acmcertificateimport-sample
+spec:
+  secretRef:
+    name: test-secret
