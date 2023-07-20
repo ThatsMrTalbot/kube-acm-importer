@@ -1,7 +1,9 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/thatsmrtalbot/kube-acm-importer
-TAGS ?= latest
+CHART_REPO ?= ghcr.io/thatsmrtalbot/charts
+CHART_VERSION ?= 0.0.1
+TAGS ?= dev
 
 # KO config
 export KO_DOCKER_REPO = $(IMG)
@@ -85,6 +87,18 @@ ko-build: test ## Build the image and import into docker.
 ko-publish: test ## Build the image and publish.
 	$(KO) build --push --bare $(KO_BUILD_FLAGS) ./cmd
 
+.PHONY: helm-build
+helm-build: manifests kustomize helmify
+	$(KUSTOMIZE) build config/default | $(KO) resolve --push=false --bare --tag-only $(KO_BUILD_FLAGS) -f - | $(HELMIFY) -crd-dir charts/kube-acm-importer
+
+.PHONY: helm-build
+helm-publish: kube-acm-importer-$(CHART_VERSION).tgz
+	helm push kube-acm-importer-$(CHART_VERSION).tgz oci://$(CHART_REPO)
+
+.INTERMEDIATE: kube-acm-importer-$(CHART_VERSION).tgz
+kube-acm-importer-$(CHART_VERSION).tgz: 
+	helm package --version $(CHART_VERSION) ./charts/kube-acm-importer
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -120,11 +134,13 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 KO ?= $(LOCALBIN)/ko
+HELMIFY ?= $(LOCALBIN)/helmify
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.0.1
 CONTROLLER_TOOLS_VERSION ?= v0.12.0
 KO_VERSION ?= v0.14.1
+HELMIFY_VERSION ?= v0.4.5
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary. If wrong version is installed, it will be removed before downloading.
@@ -147,7 +163,12 @@ $(ENVTEST): $(LOCALBIN)
 	test -s $(LOCALBIN)/setup-envtest || GOBIN=$(LOCALBIN) go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 
 .PHONY: ko
-ko: $(KO) ## Download envtest-setup locally if necessary.
+ko: $(KO) ## Download ko locally if necessary.
 $(KO): $(LOCALBIN)
 	test -s $(LOCALBIN)/ko && $(LOCALBIN)/ko version | grep -q $(KO_VERSION) || \
 	GOBIN=$(LOCALBIN) go install github.com/google/ko@$(KO_VERSION)
+
+.PHONY: helmify
+helmify: $(HELMIFY) ## Download helmify locally if necessary.
+$(HELMIFY): $(LOCALBIN)
+	test -s $(LOCALBIN)/helmify || GOBIN=$(LOCALBIN) go install github.com/arttor/helmify/cmd/helmify@$(HELMIFY_VERSION)
