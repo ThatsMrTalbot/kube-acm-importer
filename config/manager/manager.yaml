@@ -66,9 +66,7 @@ spec:
         # seccompProfile:
         #   type: RuntimeDefault
       containers:
-      - command:
-        - /manager
-        args:
+      - args:
         - --leader-elect
         image: ko://github.com/thatsmrtalbot/kube-acm-importer/cmd
         name: manager
