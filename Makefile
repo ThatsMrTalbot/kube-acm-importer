@@ -2,7 +2,7 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/thatsmrtalbot/kube-acm-importer
 CHART_REPO ?= ghcr.io/thatsmrtalbot/charts
-CHART_VERSION ?= 0.0.1
+CHART_VERSION ?= 0.2.0
 TAGS ?= dev
 
 # KO config
@@ -80,15 +80,15 @@ run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
 .PHONY: ko-build
-ko-build: test ## Build the image and import into docker.
+ko-build: test ko ## Build the image and import into docker.
 	$(KO) build --local $(KO_BUILD_FLAGS) ./cmd
 
 .PHONY: ko-publish
-ko-publish: test ## Build the image and publish.
+ko-publish: test ko ## Build the image and publish.
 	$(KO) build --push --bare $(KO_BUILD_FLAGS) ./cmd
 
 .PHONY: helm-build
-helm-build: manifests kustomize helmify
+helm-build: manifests kustomize helmify ko
 	$(KUSTOMIZE) build config/default | $(KO) resolve --push=false --bare --tag-only $(KO_BUILD_FLAGS) -f - | $(HELMIFY) -crd-dir charts/kube-acm-importer
 
 .PHONY: helm-build
@@ -114,7 +114,7 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 	$(KUSTOMIZE) build config/crd | $(KUBECTL) delete --ignore-not-found=$(ignore-not-found) -f -
 
 .PHONY: deploy
-deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
+deploy: ko manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/default | $(KO) resolve --push --bare $(KO_BUILD_FLAGS) -f - | $(KUBECTL) apply -f -
 
 .PHONY: undeploy
