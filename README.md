@@ -82,31 +82,15 @@ spec:
 You’ll need a Kubernetes cluster to run against. You can use [KIND](https://sigs.k8s.io/kind) to get a local cluster for testing, or run against a remote cluster.
 **Note:** Your controller will automatically use the current context in your kubeconfig file (i.e. whatever cluster `kubectl cluster-info` shows).
 
-### Running on the cluster
-1. Install Instances of Custom Resources:
+### Installing with helm
+
+Before installing the operator an AWS IAM role with ImportCertificate and DeleteCertificate permissions is required.
+
+The operator can be installed using helm, the following example will deploy `kube-acm-importer` using the IAM role `$MY_ROLE`:
 
 ```sh
-kubectl apply -f config/samples/
-```
-
-2. Build the image and deploy the controller to the cluster with the image specified by `IMG` and `TAG`:
-
-```sh
-make deploy IMG=<some-registry>/kube-acm-importer TAG=latest
-```
-
-### Uninstall CRDs
-To delete the CRDs from the cluster:
-
-```sh
-make uninstall
-```
-
-### Undeploy controller
-UnDeploy the controller from the cluster:
-
-```sh
-make undeploy
+helm upgrade --install kube-acm-importer oci://ghcr.io/thatsmrtalbot/charts/kube-acm-importer \
+  --set controllerManager.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=$MY_ROLE
 ```
 
 ### How it works
